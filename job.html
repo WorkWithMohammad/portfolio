@@ -1,0 +1,86 @@
+/* ============================================================
+   jobs.js
+   Public job board: list, search, filter, view detail, apply.
+   Used by pages/jobs.html and pages/job.html.
+   ============================================================ */
+(function (global) {
+  function jobMatchesFilter(job, q, skill, type) {
+    const t = (q || '').toLowerCase().trim();
+    if (t) {
+      const hay = [job.title, job.description, job.location, job.companyName, (job.skills||[]).join(' ')]
+        .join(' ').toLowerCase();
+      if (!hay.includes(t)) return false;
+    }
+    if (skill && !(job.skills||[]).map(s=>s.toLowerCase()).includes(skill.toLowerCase())) return false;
+    if (type && job.type !== type) return false;
+    return true;
+  }
+
+  function jobCardHTML(job, { applied=false, canApply=true } = {}) {
+    const root = Auth.resolveRoot();
+    return `
+      <article class="card">
+        <h3>${UI.escapeHtml(job.title)}</h3>
+        <div class="meta">
+          <span>🏢 ${UI.escapeHtml(job.companyName||'—')}</span>
+          <span>📍 ${UI.escapeHtml(job.location||'—')}</span>
+          <span>💼 ${UI.escapeHtml(job.type||'—')}</span>
+          ${job.salary?`<span>💰 ${UI.escapeHtml(job.salary)}</span>`:''}
+        </div>
+        <div class="chips">
+          ${(job.skills||[]).map(s=>`<span class="chip">${UI.escapeHtml(s)}</span>`).join('')}
+        </div>
+        <p style="margin:.2rem 0;color:var(--muted);font-size:.92rem">${UI.escapeHtml((job.description||'').slice(0,140))}${(job.description||'').length>140?'…':''}</p>
+        <div class="actions">
+          <a class="btn btn-ghost btn-sm" href="${root}pages/job.html?id=${encodeURIComponent(job.id)}">View details</a>
+          ${canApply
+            ? (applied
+                ? `<span class="chip" style="background:#dcfce7;color:#166534">✓ Applied</span>`
+                : `<button class="btn btn-primary btn-sm" data-apply="${job.id}">Apply</button>`)
+            : ''}
+        </div>
+      </article>`;
+  }
+
+  /** Render the public board into a container with toolbar. */
+  function mountBoard({ container, toolbar, currentUser }) {
+    function render() {
+      const q = toolbar.querySelector('[name=q]').value;
+      const skill = toolbar.querySelector('[name=skill]').value;
+      const type = toolbar.querySelector('[name=type]').value;
+      const jobs = Store.getJobs().filter(j => jobMatchesFilter(j, q, skill, type));
+      const apps = currentUser ? Store.getApplications().filter(a => a.applicantId === currentUser.id) : [];
+      const appliedSet = new Set(apps.map(a => a.jobId));
+
+      if (!jobs.length) {
+        container.innerHTML = `<div class="empty">No jobs match your filters yet.</div>`;
+        return;
+      }
+      container.innerHTML = jobs.map(j => jobCardHTML(j, {
+        applied: appliedSet.has(j.id),
+        canApply: !currentUser || currentUser.role === 'applicant',
+      })).join('');
+
+      container.querySelectorAll('[data-apply]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (!currentUser) { UI.toast('Please log in as an applicant to apply.', 'error'); return; }
+          if (currentUser.role !== 'applicant') { UI.toast('Companies cannot apply to jobs.', 'error'); return; }
+          const res = Store.addApplication({ jobId: btn.dataset.apply, applicantId: currentUser.id });
+          if (!res) UI.toast('You already applied to this job.');
+          else { UI.toast('Application submitted!', 'success'); render(); }
+        });
+      });
+    }
+
+    // Populate skill dropdown from existing data
+    const allSkills = Array.from(new Set(Store.getJobs().flatMap(j => j.skills||[]))).sort();
+    const skillSel = toolbar.querySelector('[name=skill]');
+    skillSel.innerHTML = `<option value="">All skills</option>` + allSkills.map(s=>`<option>${UI.escapeHtml(s)}</option>`).join('');
+
+    toolbar.addEventListener('input', render);
+    toolbar.addEventListener('change', render);
+    render();
+  }
+
+  global.JobsUI = { jobCardHTML, jobMatchesFilter, mountBoard };
+})(window);

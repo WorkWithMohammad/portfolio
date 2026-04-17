@@ -1,0 +1,81 @@
+/* ============================================================
+   dashboard.js
+   Shared dashboard helpers: notes panel, documents panel.
+   Per-role rendering lives in the page files.
+   ============================================================ */
+(function (global) {
+  function renderNotesPanel(container, userId) {
+    function paint() {
+      const notes = Store.getNotes(userId);
+      container.innerHTML = `
+        <form class="stack" id="noteForm" style="margin-bottom:1rem">
+          <div class="form-row">
+            <label>Title <input type="text" name="title" required maxlength="80" placeholder="e.g. Interview prep" /></label>
+            <label>&nbsp;<button class="btn btn-primary" type="submit">Add note</button></label>
+          </div>
+          <label>Body <textarea name="body" required maxlength="2000" placeholder="Write something useful…"></textarea></label>
+        </form>
+        <div class="grid cols-2" id="noteList">
+          ${notes.length ? notes.map(n => `
+            <div class="card">
+              <h3>${UI.escapeHtml(n.title)}</h3>
+              <small style="color:var(--muted)">${UI.timeAgo(n.createdAt)}</small>
+              <p style="white-space:pre-wrap;color:var(--text);font-size:.92rem">${UI.escapeHtml(n.body)}</p>
+              <div class="actions"><button class="btn btn-danger btn-sm" data-del="${n.id}">Delete</button></div>
+            </div>`).join('')
+            : `<div class="empty" style="grid-column:1/-1">No notes yet. Add your first one above.</div>`}
+        </div>
+      `;
+      container.querySelector('#noteForm').addEventListener('submit', e => {
+        e.preventDefault();
+        const f = new FormData(e.target);
+        Store.addNote(userId, { title: f.get('title').trim(), body: f.get('body').trim() });
+        UI.toast('Note added', 'success');
+        paint();
+      });
+      container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+        Store.deleteNote(userId, b.dataset.del); paint();
+      }));
+    }
+    paint();
+  }
+
+  function renderDocsPanel(container, userId, { label='Documents' } = {}) {
+    function paint() {
+      const docs = Store.getDocs(userId);
+      container.innerHTML = `
+        <form class="stack" id="docForm" style="margin-bottom:1rem">
+          <label>Upload a file (max ~2MB recommended for localStorage)
+            <input type="file" name="file" required />
+          </label>
+        </form>
+        <div class="grid cols-2">
+          ${docs.length ? docs.map(d => `
+            <div class="card">
+              <h3>${UI.escapeHtml(d.name)}</h3>
+              <div class="meta"><span>${UI.escapeHtml(d.type||'file')}</span><span>${UI.bytes(d.size||0)}</span><span>${UI.timeAgo(d.uploadedAt)}</span></div>
+              <div class="actions">
+                <a class="btn btn-ghost btn-sm" href="${d.dataUrl}" download="${UI.escapeHtml(d.name)}">Download</a>
+                <button class="btn btn-danger btn-sm" data-del="${d.id}">Delete</button>
+              </div>
+            </div>`).join('')
+            : `<div class="empty" style="grid-column:1/-1">No ${label.toLowerCase()} uploaded yet.</div>`}
+        </div>`;
+      container.querySelector('#docForm input[type=file]').addEventListener('change', async (e) => {
+        const file = e.target.files[0]; if (!file) return;
+        if (file.size > 4 * 1024 * 1024) { UI.toast('File too large (max ~4MB).', 'error'); return; }
+        try {
+          const dataUrl = await UI.readFileAsDataURL(file);
+          Store.addDoc(userId, { name: file.name, type: file.type, size: file.size, dataUrl });
+          UI.toast('File uploaded', 'success'); paint();
+        } catch { UI.toast('Could not read file.', 'error'); }
+      });
+      container.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+        Store.deleteDoc(userId, b.dataset.del); paint();
+      }));
+    }
+    paint();
+  }
+
+  global.Dashboard = { renderNotesPanel, renderDocsPanel };
+})(window);

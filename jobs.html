@@ -1,0 +1,64 @@
+/* ============================================================
+   app.js
+   Wires the landing page: auth modal, signup/login submit,
+   redirect to dashboards, demo data seeding.
+   ============================================================ */
+(function () {
+  Store.seedIfEmpty();
+  document.getElementById('yr').textContent = new Date().getFullYear();
+
+  // If already signed in, jump straight to dashboard.
+  const existing = Auth.current();
+  if (existing && !location.search.includes('stay=1')) {
+    Auth.routeToDashboard(existing);
+    return;
+  }
+
+  const modal = document.getElementById('authModal');
+  const loginForm = document.getElementById('loginForm');
+  const signupForm = document.getElementById('signupForm');
+  const tabs = modal.querySelectorAll('.tab');
+
+  function openModal(tab='login') {
+    modal.hidden = false;
+    setTab(tab);
+  }
+  function closeModal() { modal.hidden = true; }
+  function setTab(name) {
+    tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    loginForm.hidden = name !== 'login';
+    signupForm.hidden = name !== 'signup';
+  }
+
+  document.getElementById('navLogin').addEventListener('click', e => { e.preventDefault(); openModal('login'); });
+  document.getElementById('navSignup').addEventListener('click', e => { e.preventDefault(); openModal('signup'); });
+  document.getElementById('ctaSignup').addEventListener('click', () => openModal('signup'));
+  document.getElementById('authClose').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  tabs.forEach(t => t.addEventListener('click', () => setTab(t.dataset.tab)));
+
+  loginForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const err = document.getElementById('loginError'); err.textContent = '';
+    const f = new FormData(loginForm);
+    try {
+      const user = Auth.login({ email: f.get('email'), password: f.get('password') });
+      Auth.routeToDashboard(user);
+    } catch (ex) { err.textContent = ex.message; }
+  });
+
+  signupForm.addEventListener('submit', e => {
+    e.preventDefault();
+    const err = document.getElementById('signupError'); err.textContent = '';
+    const f = new FormData(signupForm);
+    try {
+      const user = Auth.signup({
+        name: f.get('name'),
+        email: f.get('email'),
+        password: f.get('password'),
+        role: f.get('role'),
+      });
+      Auth.routeToDashboard(user);
+    } catch (ex) { err.textContent = ex.message; }
+  });
+})();
